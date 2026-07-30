@@ -2,10 +2,14 @@
 
 `charger_donnees()` lit le jeu trajectoire emploi depuis `data/dataset_trajectoire_emploi_Sujet Examen CISIA - Promo Upskilling Atlas - mai-oct2026 (Session-00279143).csv`. Placez ce
 fichier avant d'executer le projet (voir `data/README.md`).
+`identification()` réalise une première analyse des données nécessaire à la création du dictionnaire des varaibles.
+
+
 """
 import pandas as pd
 
 from . import config
+from .config import FEATURES_DISPONIBLES
 
 
 def charger_donnees(verbose: bool = True) -> pd.DataFrame:
@@ -17,3 +21,40 @@ def charger_donnees(verbose: bool = True) -> pd.DataFrame:
     if verbose:
         print(f"Chargement du CSV : {config.DATA_FILE}")
     return pd.read_csv(config.DATA_FILE)
+
+def identification(df: pd.DataFrame) -> dict:
+    """Identification des données : types, cardinalité, min, max."""
+
+    resultats = []
+
+    for feature in FEATURES_DISPONIBLES:
+        serie = df[feature]
+
+        # Cardinalité avec unique()
+        cardinalite = serie.nunique()
+
+        try:
+            valeur_min = serie.min()
+            valeur_max = serie.max()
+        except TypeError:
+            valeur_min = "Non applicable"
+            valeur_max = "Non applicable"
+
+        resultats.append({
+            "Feature": feature,
+            "Type": str(serie.dtype),
+            "Cardinalité": cardinalite,
+            "Minimum": valeur_min,
+            "Maximum": valeur_max,
+        })
+
+    return pd.DataFrame(resultats)
+
+def profiler(df: pd.DataFrame) -> dict:
+    """Profilage de base : volumetrie, types, manquants."""
+    return {
+        "lignes": len(df),
+        "colonnes": list(df.columns),
+        "manquants_par_colonne": df.isna().sum().to_dict(),
+        "types": df.dtypes.astype(str).to_dict(),
+    }

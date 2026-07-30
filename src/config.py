@@ -16,7 +16,17 @@ TARGET = ""
 
 # Ensemble des features du dataset
 FEATURES_DISPONIBLES = [
-# TODO
+# df.columns.tolist()
+ 'usager_id',
+ 'age',
+ 'niveau_diplome',
+ 'anciennete_poste_ans',
+ 'code_rome_vise',
+ 'code_insee_commune',
+ 'est_allocataire',
+ 'nationalite_hors_ue',
+ 'synthese_entretien',
+ 'classe_retour_emploi'
 ]
 
 
