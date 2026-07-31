@@ -1,4 +1,4 @@
-"""Chargement et profilage des donnees (etape 1 du brief).
+"""Chargement et profilage des donnees.
 
 `charger_donnees()` lit le jeu trajectoire emploi depuis `data/dataset_trajectoire_emploi_Sujet Examen CISIA - Promo Upskilling Atlas - mai-oct2026 (Session-00279143).csv`. Placez ce
 fichier avant d'executer le projet (voir `data/README.md`).
@@ -30,7 +30,7 @@ def identification(df: pd.DataFrame) -> dict:
     for feature in FEATURES_DISPONIBLES:
         serie = df[feature]
 
-        # Cardinalité avec unique()
+        # Cardinalité avec nunique()
         cardinalite = serie.nunique()
 
         try:
@@ -50,11 +50,57 @@ def identification(df: pd.DataFrame) -> dict:
 
     return pd.DataFrame(resultats)
 
+def detecter_valeurs_aberrantes(serie):
+    """function permettant de détecter les valeurs aberrantes."""
+
+    q1 = serie.quantile(0.25)
+    q3 = serie.quantile(0.75)
+
+    iqr = q3 - q1
+
+    borne_basse = q1 - 1.5 * iqr
+    borne_haute = q3 + 1.5 * iqr
+
+    valeurs_aberrantes = serie[
+        (serie < borne_basse) |
+        (serie > borne_haute)
+    ]
+
+    return iqr,len(valeurs_aberrantes)
+
 def profiler(df: pd.DataFrame) -> dict:
     """Profilage de base : volumetrie, types, manquants."""
-    return {
-        "lignes": len(df),
-        "colonnes": list(df.columns),
-        "manquants_par_colonne": df.isna().sum().to_dict(),
-        "types": df.dtypes.astype(str).to_dict(),
-    }
+
+    resultats = []
+
+    for feature in FEATURES_DISPONIBLES:
+        serie = df[feature]
+
+        # Cardinalité avec unique()
+        cardinalite = len(serie.unique())
+
+        # Nombre de manquant()
+        manquants = serie.isna().sum()
+
+        # Calcule de l'IQR uniquement sur les valeurs numériques
+        if pd.api.types.is_numeric_dtype(serie):
+            iqr,abberation = detecter_valeurs_aberrantes(serie)
+        else:
+            iqr,abberation = 'N/A','N/A'
+
+        # Doublon
+        doublons = serie.duplicated().sum()
+
+        resultats.append({
+            "Feature": feature,
+            "Type": str(serie.dtype),
+            "Cardinalité": cardinalite,
+            "Manquant": manquants,
+            "Abberation (IQR)": iqr,
+            "Nb Valeur abb. (IQR)": abberation,
+            "Nb Doublons":doublons,
+        })
+
+    return pd.DataFrame(resultats)
+
+
