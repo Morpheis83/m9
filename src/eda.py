@@ -23,6 +23,7 @@ validation_mae
     apprentissage-validation.
 """
 
+import re
 import numpy as np
 import pandas as pd
 
@@ -92,7 +93,7 @@ def profiler(df: pd.DataFrame) -> pd.DataFrame:
     - la cardinalité, valeurs manquantes comprises ;
     - le nombre de valeurs manquantes ;
     - l'écart interquartile pour les variables numériques ;
-    - le nombre de valeurs aberrantes détectées avec l'IQR ;
+    - le nombre de valeurs aberrantes détectées avec l'IQR ; Traitement particulier pour code_insee_commune => vérification format INSEE
     - le nombre de valeurs dupliquées dans la colonne.
 
     Parameters
@@ -123,7 +124,23 @@ def profiler(df: pd.DataFrame) -> pd.DataFrame:
         nombre_manquants = serie.isna().sum()
 
         # L'IQR est pertinent uniquement pour les variables numériques.
-        if pd.api.types.is_numeric_dtype(serie):
+        # Traitement du cas particulier code_insee_commune dont le format est standardisé 5 digits ou "2A" suivi de 3 digits ou "2B" suivi de 3 digits
+        if (feature == "code_insee_commune"):
+            serie_normalisee = (
+                serie
+                .astype("string")
+                .str.strip()
+                .str.upper()
+            )
+
+            format_valide = serie_normalisee.str.fullmatch(
+                r"(?:\d{5}|2[AB]\d{3})",
+                na=False
+            )
+
+            iqr = "N/A"
+            nombre_aberrantes = (~format_valide).sum()
+        elif pd.api.types.is_numeric_dtype(serie):
             iqr, nombre_aberrantes = detecter_valeurs_aberrantes(
                 serie
             )
@@ -385,3 +402,60 @@ def validation_mediane_globale(
         })
 
     return pd.DataFrame(resultats)
+
+def extraire_departement(code_insee):
+    """
+    Extraire le département à partir d'un code INSEE communal.
+
+    Règles appliquées :
+    - Métropole : les deux premiers caractères ;
+    - Corse : conservation de `2A` ou `2B` ;
+    - Outre-mer : les trois premiers caractères pour les codes
+      commençant par `97` ou `98`.
+
+    Exemples
+    --------
+    83000  -> 83
+    2A004  -> 2A
+    2B123  -> 2B
+    97105  -> 971
+    97411  -> 974
+
+    Parameters
+    ----------
+    code_insee : str
+        Code INSEE communal à cinq caractères.
+
+    Returns
+    -------
+    str ou pd.NA
+        Code du département extrait, ou `pd.NA` lorsque le code
+        est manquant ou ne respecte pas le format attendu.
+    """
+
+    # Une valeur absente ne permet pas d'extraire un département.
+    if pd.isna(code_insee):
+        return pd.NA
+
+    # Normalisation du code avant son contrôle.
+    code = str(code_insee).strip().upper()
+
+    # Vérification du format :
+    # - cinq chiffres ;
+    # - ou code corse commençant par 2A ou 2B.
+    format_valide = re.fullmatch(
+        r"(?:\d{5}|2[AB]\d{3})",
+        code
+    )
+
+    if format_valide is None:
+        return pd.NA
+
+    # Les départements et collectivités ultramarins
+    # sont identifiés par trois caractères.
+    if code.startswith(("97", "98")):
+        return code[:3]
+
+    # Pour les départements métropolitains,
+    # les deux premiers chiffres suffisent.
+    return code[:2]
