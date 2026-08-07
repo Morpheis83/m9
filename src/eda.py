@@ -83,10 +83,10 @@ def detecter_valeurs_aberrantes(
     return iqr, int(nombre_valeurs_aberrantes)
 
 
-def profiler(df: pd.DataFrame) -> pd.DataFrame:
+def profiler(df: pd.DataFrame, list_to_process = None) -> pd.DataFrame:
     """Produire un profil synthétique des variables du DataFrame.
 
-    Pour chaque variable déclarée dans ``FEATURES_DISPONIBLES``, la fonction
+    Pour chaque variable déclarée dans le paramètre ``list_to_process`` (ou à defaut ``FEATURES_DISPONIBLES``), la fonction
     calcule :
 
     - le type de données ;
@@ -114,7 +114,12 @@ def profiler(df: pd.DataFrame) -> pd.DataFrame:
 
     resultats = []
 
-    for feature in FEATURES_DISPONIBLES:
+    if list_to_process is None:
+        features = FEATURES_DISPONIBLES
+    else:
+        features = list_to_process
+
+    for feature in features:
         serie = df[feature]
 
         # La méthode unique() conserve les valeurs NaN dans la cardinalité.
