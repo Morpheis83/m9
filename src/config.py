@@ -28,18 +28,23 @@ FEATURES_DISPONIBLES = [
  'synthese_entretien'
 ]
 
-
 # Ensemble des features relatif à un identifiant du dataset
 IDENTIFIANTS = [
-# TODO
+ 'usager_id',
 ]
 
-# Ensemble des features de type categorielle
-CATEGORICAL = [
-# TODO
+# Ensemble des features qualitatives
+FEATURES_QUALITATIVES = [
+    "niveau_diplome",
+    "code_rome_vise",
+    "est_allocataire",
+    "code_insee_commune",
+    "nationalite_hors_ue",
+    "synthese_entretien"
 ]
 
 # Ensemble des features de type numerique
 NUMERIC = [
-# TODO
+ 'age',
+  'anciennete_poste_ans',
 ]

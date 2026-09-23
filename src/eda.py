@@ -34,6 +34,8 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 
+from scipy.stats import chi2_contingency
+
 from .config import FEATURES_DISPONIBLES
 
 
@@ -464,3 +466,37 @@ def extraire_departement(code_insee):
     # Pour les départements métropolitains,
     # les deux premiers chiffres suffisent.
     return code[:2]
+
+def cramers_v(x, y):
+    """
+    Calcule le V de Cramér entre deux variables qualitatives.
+
+    Retourne une valeur comprise entre 0 et 1 :
+    - 0   : aucune association
+    - 1   : association parfaite
+    """
+
+    # Tableau de contingence
+    table = pd.crosstab(x, y)
+
+    # Test du Chi²
+    chi2 = chi2_contingency(table)[0]
+
+    # Nombre total d'observations
+    n = table.to_numpy().sum()
+
+    # Dimensions du tableau
+    r, k = table.shape
+
+    # Éviter une division par zéro
+    denominateur = min(r - 1, k - 1)
+
+    if denominateur == 0:
+        return 0.0
+
+    # Calcul du V de Cramér
+    v = np.sqrt(
+        chi2 / (n * denominateur)
+    )
+
+    return v
