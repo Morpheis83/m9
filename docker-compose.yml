@@ -1,0 +1,236 @@
+services:
+
+  # ==========================================================
+  # MLFLOW
+  # ==========================================================
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+
+    container_name: retour-emploi-mlflow
+
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --artifacts-destination /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
+      --allowed-hosts "mlflow:5000,localhost:*,127.0.0.1:*"
+
+    ports:
+      - "5000:5000"
+
+    volumes:
+      - mlflow-data:/mlflow
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+    restart: unless-stopped
+
+
+  # ==========================================================
+  # INITIALISATION DU MODELE
+  #
+  # Service one-shot :
+  # - attend MLflow
+  # - crée le modèle uniquement s'il n'existe pas
+  # - s'arrête une fois terminé
+  # ==========================================================
+
+  model-init:
+    build: .
+
+    container_name: retour-emploi-model-init
+
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+
+    volumes:
+      - model-data:/app/model
+      - ./data:/app/data:ro
+
+    depends_on:
+      mlflow:
+        condition: service_healthy
+
+    command:
+      - /bin/sh
+      - -c
+      - |
+          if [ ! -f /app/model/pipeline_model.joblib ] || [ ! -f /app/model/drift_reference.json ]; then
+            echo "Modèle ou référence de drift absent - entraînement";
+            python -m src.init_model;
+          else
+            echo "Modèle et référence de drift déjà présents";
+          fi
+
+    restart: "no"
+
+
+    # ==========================================================
+  # API FASTAPI
+  # ==========================================================
+
+  runtime-init:
+    image: alpine:latest
+
+    user: root
+
+    volumes:
+      - runtime-data:/app/runtime
+
+    command: >
+      sh -c "
+      chown -R 10001:10001 /app/runtime
+      "
+
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: retour-emploi-api
+
+    ports:
+      - "8000:8000"
+
+    environment:
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+      MODEL_RELOAD_INTERVAL_SECONDS: "5"
+
+      NO_PROXY: mlflow,localhost,127.0.0.1
+      no_proxy: mlflow,localhost,127.0.0.1
+
+    volumes:
+      # L'API ne doit que lire le modèle
+      - model-data:/app/model:ro
+
+      - runtime-data:/app/runtime
+
+    depends_on:
+
+      model-init:
+        condition: service_completed_successfully
+      runtime-init:
+        condition: service_completed_successfully
+
+    restart: unless-stopped
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: retour-emploi-ui
+
+    command: >
+      streamlit run src/ui.py
+      --server.address=0.0.0.0
+      --server.port=8501
+
+    ports:
+      - "8501:8501"
+
+    environment:
+      API_URL: http://api:8000
+
+    depends_on:
+      api:
+        condition: service_healthy
+
+    restart: unless-stopped
+  prometheus:
+
+    image: prom/prometheus:latest
+
+    container_name: retour-emploi-prometheus
+
+    ports:
+      - "9090:9090"
+
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+    depends_on:
+      api:
+        condition: service_healthy
+
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana:13.1.0
+
+    container_name: retour-emploi-grafana
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+
+    volumes:
+      - grafana-data-13-1:/var/lib/grafana
+
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+    depends_on:
+      - prometheus
+
+    restart: unless-stopped
+
+  retrain-worker:
+
+    build: .
+
+    container_name: retour-emploi-retrain-worker
+
+    command:
+      - python
+      - -m
+      - src.retrain_worker
+
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+
+      HISTORY_DB_PATH: /app/runtime/history.db
+
+      MIN_RETRAIN_FEEDBACK: "20"
+
+      MAX_RETRAIN_LATENCY_P95_MS: "200"
+
+    volumes:
+      - model-data:/app/model
+      - runtime-data:/app/runtime
+      - ./data:/app/data:ro
+
+    depends_on:
+
+      mlflow:
+        condition: service_healthy
+
+      model-init:
+        condition: service_completed_successfully
+
+    restart: unless-stopped
+
+volumes:
+  runtime-data:
+  mlflow-data:
+  model-data:
+  prometheus-data:
+  grafana-data-13-1:
