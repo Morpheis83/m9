@@ -128,11 +128,6 @@ sauvegarder_reference_drift(
     DRIFT_REFERENCE_PATH,
 )
 
-mlflow.log_artifact(
-    str(DRIFT_REFERENCE_PATH),
-    artifact_path="monitoring",
-)
-
 
 # ============================================================
 # PIPELINE FINAL
@@ -177,6 +172,13 @@ if mlflow.active_run() is not None:
 with mlflow.start_run(
     run_name="scenario_2_logistic_regression"
 ) as run:
+
+    # La référence de drift est enregistrée dans le même run
+    # que le modèle et ses métriques.
+    mlflow.log_artifact(
+        str(DRIFT_REFERENCE_PATH),
+        artifact_path="monitoring",
+    )
 
     # ========================================================
     # ENTRAINEMENT ET EVALUATION
