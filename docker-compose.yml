@@ -49,6 +49,8 @@ services:
 
   model-init:
     build: .
+    healthcheck:
+      disable: true
 
     container_name: retour-emploi-model-init
 
@@ -131,6 +133,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
 
     container_name: retour-emploi-ui
 
@@ -197,6 +209,9 @@ services:
 
     build: .
 
+    healthcheck:
+      disable: true
+      
     container_name: retour-emploi-retrain-worker
 
     command:
