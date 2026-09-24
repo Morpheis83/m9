@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 
+# Smoke test complet de la stack Docker Retour Emploi.
+#
+# Le script vérifie :
+# - la validité de docker-compose.yml ;
+# - le démarrage des services ;
+# - l'initialisation du modèle ;
+# - les principaux endpoints FastAPI ;
+# - la persistance SQLite ;
+# - les métriques Prometheus ;
+# - le provisioning Grafana ;
+# - Streamlit ;
+# - le worker de réentraînement ;
+# - la protection de l'endpoint /retrain.
+
 set -Eeuo pipefail
 
 
@@ -26,24 +40,28 @@ HEALTH_FILE="${TMP_DIR}/health.json"
 
 
 # ============================================================
-# NETTOYAGE
+# OUTILS
 # ============================================================
 
-cleanup() {
-
-    rm -rf "${TMP_DIR}"
-
+section() {
+    echo
+    echo "============================================================"
+    echo "$1"
+    echo "============================================================"
 }
 
-trap cleanup EXIT
+
+success() {
+    echo "OK - $1"
+}
 
 
-# ============================================================
-# LOGS EN CAS D'ERREUR
-# ============================================================
+cleanup() {
+    rm -rf "${TMP_DIR}"
+}
+
 
 show_logs() {
-
     echo
     echo "============================================================"
     echo "SMOKE TEST EN ECHEC - ETAT DOCKER"
@@ -53,64 +71,34 @@ show_logs() {
 
     echo
     echo "---------------- API ----------------"
-
-    docker compose logs \
-        --tail=100 \
-        api \
-        || true
+    docker compose logs --tail=100 api || true
 
     echo
     echo "------------- MODEL INIT -------------"
-
-    docker compose logs \
-        --tail=100 \
-        model-init \
-        || true
+    docker compose logs --tail=100 model-init || true
 
     echo
     echo "---------- RETRAIN WORKER ------------"
-
-    docker compose logs \
-        --tail=100 \
-        retrain-worker \
-        || true
+    docker compose logs --tail=100 retrain-worker || true
 
     echo
     echo "------------- PROMETHEUS -------------"
-
-    docker compose logs \
-        --tail=50 \
-        prometheus \
-        || true
+    docker compose logs --tail=50 prometheus || true
 
     echo
     echo "--------------- GRAFANA --------------"
-
-    docker compose logs \
-        --tail=100 \
-        grafana \
-        || true
+    docker compose logs --tail=100 grafana || true
 }
 
 
-trap 'show_logs' ERR
-
-
-# ============================================================
-# FONCTIONS
-# ============================================================
-
 wait_http() {
-
     local name="$1"
     local url="$2"
 
     echo
     echo "Attente : ${name}"
 
-    for ((i=1; i<=MAX_RETRIES; i++))
-    do
-
+    for ((i = 1; i <= MAX_RETRIES; i++)); do
         if curl \
             --noproxy "*" \
             --silent \
@@ -119,41 +107,28 @@ wait_http() {
             "${url}" \
             > /dev/null
         then
-
-            echo "OK - ${name}"
+            success "${name}"
             return 0
-
         fi
 
-        echo \
-            "  tentative ${i}/${MAX_RETRIES}"
-
+        echo "  tentative ${i}/${MAX_RETRIES}"
         sleep "${SLEEP_SECONDS}"
-
     done
 
-
     echo "ERREUR - ${name} indisponible"
-
     return 1
 }
 
 
-success() {
-
-    echo "OK - $1"
-
-}
+trap cleanup EXIT
+trap show_logs ERR
 
 
 # ============================================================
 # 1. VALIDATION DOCKER COMPOSE
 # ============================================================
 
-echo
-echo "============================================================"
-echo "1. Validation Docker Compose"
-echo "============================================================"
+section "1. Validation Docker Compose"
 
 docker compose config --quiet
 
@@ -164,10 +139,7 @@ success "docker-compose.yml valide"
 # 2. DEMARRAGE DE LA STACK
 # ============================================================
 
-echo
-echo "============================================================"
-echo "2. Démarrage de la stack"
-echo "============================================================"
+section "2. Démarrage de la stack"
 
 docker compose up \
     -d \
@@ -175,33 +147,26 @@ docker compose up \
 
 
 # ============================================================
-# 3. SERVICES HTTP
+# 3. DISPONIBILITE DES SERVICES
 # ============================================================
 
-echo
-echo "============================================================"
-echo "3. Disponibilité des services"
-echo "============================================================"
+section "3. Disponibilité des services"
 
 wait_http \
     "MLflow" \
     "${MLFLOW_URL}/health"
 
-
 wait_http \
     "FastAPI" \
     "${API_URL}/health"
-
 
 wait_http \
     "Prometheus" \
     "${PROMETHEUS_URL}/-/healthy"
 
-
 wait_http \
     "Grafana" \
     "${GRAFANA_URL}/api/health"
-
 
 wait_http \
     "Streamlit" \
@@ -212,10 +177,7 @@ wait_http \
 # 4. MODEL-INIT
 # ============================================================
 
-echo
-echo "============================================================"
-echo "4. Vérification model-init"
-echo "============================================================"
+section "4. Vérification model-init"
 
 MODEL_INIT_CONTAINER="$(
     docker compose ps \
@@ -224,16 +186,10 @@ MODEL_INIT_CONTAINER="$(
         model-init
 )"
 
-
-if [ -z "${MODEL_INIT_CONTAINER}" ]
-then
-
+if [ -z "${MODEL_INIT_CONTAINER}" ]; then
     echo "ERREUR - conteneur model-init introuvable"
-
     exit 1
-
 fi
-
 
 MODEL_INIT_STATUS="$(
     docker inspect \
@@ -241,100 +197,71 @@ MODEL_INIT_STATUS="$(
         --format '{{.State.Status}}'
 )"
 
-
 MODEL_INIT_EXIT_CODE="$(
     docker inspect \
         "${MODEL_INIT_CONTAINER}" \
         --format '{{.State.ExitCode}}'
 )"
 
-
 echo "Status    : ${MODEL_INIT_STATUS}"
 echo "Exit code : ${MODEL_INIT_EXIT_CODE}"
 
-
-if [ "${MODEL_INIT_STATUS}" != "exited" ] ||
-   [ "${MODEL_INIT_EXIT_CODE}" != "0" ]
+if [ "${MODEL_INIT_STATUS}" != "exited" ] \
+    || [ "${MODEL_INIT_EXIT_CODE}" != "0" ]
 then
-
     echo "ERREUR - model-init n'a pas terminé correctement"
-
     exit 1
-
 fi
-
 
 success "model-init terminé avec exit code 0"
 
 
 # ============================================================
-# 5. HEALTHCHECK API + VERSION MODELE
+# 5. HEALTHCHECK API
 # ============================================================
 
-echo
-echo "============================================================"
-echo "5. Healthcheck API"
-echo "============================================================"
+section "5. Healthcheck API"
 
 curl \
     --noproxy "*" \
     --silent \
     --fail \
+    --max-time 10 \
     "${API_URL}/health" \
     > "${HEALTH_FILE}"
 
-
 python - "${HEALTH_FILE}" <<'PY'
-
 import json
 import sys
-
 
 with open(
     sys.argv[1],
     "r",
-    encoding="utf-8"
-) as f:
+    encoding="utf-8",
+) as file:
+    result = json.load(file)
 
-    result = json.load(f)
+assert result["status"] == "ok"
+assert result["model_loaded"] is True
 
-
-assert (
-    result["status"]
-    == "ok"
+assert result["model_version"] not in (
+    None,
+    "",
+    "unknown",
 )
-
-assert (
-    result["model_loaded"]
-    is True
-)
-
-assert (
-    result["model_version"]
-    not in (
-        None,
-        "",
-        "unknown"
-    )
-)
-
 
 print(
-    f"OK - modèle chargé "
+    "OK - modèle chargé "
     f"version={result['model_version']}"
 )
-
 PY
 
 
 # ============================================================
-# 6. PREDICTION REELLE
+# 6. PREDICTION
 # ============================================================
 
-echo
-echo "============================================================"
-echo "6. Test /predict"
-echo "============================================================"
+section "6. Test /predict"
 
 curl \
     --noproxy "*" \
@@ -345,59 +272,31 @@ curl \
     "${API_URL}/predict" \
     -H "Content-Type: application/json" \
     -d '{
-        "session_id":
-            "smoke-test",
-
-        "niveau_diplome":
-            "Bac+2",
-
-        "anciennete_poste_ans":
-            4.5,
-
-        "code_rome_vise":
-            "M1805",
-
-        "synthese_entretien":
-            "Profil autonome, recherche active."
+        "session_id": "smoke-test",
+        "niveau_diplome": "Bac+2",
+        "anciennete_poste_ans": 4.5,
+        "code_rome_vise": "M1805",
+        "synthese_entretien": "Profil autonome, recherche active."
     }' \
     > "${PREDICTION_FILE}"
 
-
 PREDICTION_ID="$(
     python - "${PREDICTION_FILE}" <<'PY'
-
 import json
 import sys
-
 
 with open(
     sys.argv[1],
     "r",
-    encoding="utf-8"
-) as f:
+    encoding="utf-8",
+) as file:
+    result = json.load(file)
 
-    result = json.load(f)
+assert result.get("prediction_id")
+assert result.get("prediction") in {0, 1, 2}
+assert result.get("model_version")
 
-
-assert result.get(
-    "prediction_id"
-)
-
-assert result.get(
-    "prediction"
-) in {
-    0,
-    1,
-    2
-}
-
-assert result.get(
-    "model_version"
-)
-
-probabilities = result.get(
-    "probabilities"
-)
+probabilities = result.get("probabilities")
 
 assert probabilities
 
@@ -406,26 +305,16 @@ assert set(
 ) == {
     "0",
     "1",
-    "2"
+    "2",
 }
 
 assert abs(
-    sum(
-        probabilities.values()
-    )
-    - 1.0
+    sum(probabilities.values()) - 1.0
 ) < 1e-6
 
-
-print(
-    result[
-        "prediction_id"
-    ]
-)
-
+print(result["prediction_id"])
 PY
 )"
-
 
 success "prédiction valide prediction_id=${PREDICTION_ID}"
 
@@ -434,10 +323,7 @@ success "prédiction valide prediction_id=${PREDICTION_ID}"
 # 7. FEEDBACK
 # ============================================================
 
-echo
-echo "============================================================"
-echo "7. Test /feedback"
-echo "============================================================"
+section "7. Test /feedback"
 
 FEEDBACK_RESPONSE="$(
     curl \
@@ -449,17 +335,12 @@ FEEDBACK_RESPONSE="$(
         "${API_URL}/feedback" \
         -H "Content-Type: application/json" \
         -d "{
-            \"prediction_id\":
-                \"${PREDICTION_ID}\",
-
-            \"actual_class\":
-                1
+            \"prediction_id\": \"${PREDICTION_ID}\",
+            \"actual_class\": 1
         }"
 )"
 
-
-echo "${FEEDBACK_RESPONSE}" \
-    | python -c '
+echo "${FEEDBACK_RESPONSE}" | python -c '
 import json
 import sys
 
@@ -476,144 +357,115 @@ print("OK - feedback enregistré")
 # 8. HISTORIQUE SQLITE
 # ============================================================
 
-echo
-echo "============================================================"
-echo "8. Test historique"
-echo "============================================================"
+section "8. Test historique"
 
 HISTORY_RESPONSE="$(
     curl \
         --noproxy "*" \
         --silent \
         --fail \
+        --max-time 10 \
         "${API_URL}/history?limit=100"
 )"
 
-
-echo "${HISTORY_RESPONSE}" \
-    | python -c "
+PREDICTION_ID="${PREDICTION_ID}" \
+    python -c '
 import json
+import os
 import sys
 
 records = json.load(sys.stdin)
 
-prediction_id = '${PREDICTION_ID}'
+prediction_id = os.environ["PREDICTION_ID"]
 
 record = next(
     (
         item
         for item in records
-        if item['prediction_id'] == prediction_id
+        if item["prediction_id"] == prediction_id
     ),
-    None
+    None,
 )
 
 assert record is not None
-
-assert (
-    record['actual_class']
-    == 1
-)
+assert record["actual_class"] == 1
 
 print(
-    'OK - prédiction + feedback présents dans SQLite'
+    "OK - prédiction + feedback présents dans SQLite"
 )
-"
+' <<< "${HISTORY_RESPONSE}"
 
 
 # ============================================================
 # 9. METRIQUES FASTAPI
 # ============================================================
 
-echo
-echo "============================================================"
-echo "9. Test métriques FastAPI"
-echo "============================================================"
+section "9. Test métriques FastAPI"
 
 METRICS="$(
     curl \
         --noproxy "*" \
         --silent \
         --fail \
+        --max-time 10 \
         "${API_URL}/metrics"
 )"
 
+grep -q \
+    "retour_emploi_model_available 1" \
+    <<< "${METRICS}"
 
-echo "${METRICS}" \
-    | grep -q \
-        "retour_emploi_model_available 1"
+grep -q \
+    "retour_emploi_predictions_total" \
+    <<< "${METRICS}"
 
+grep -q \
+    "retour_emploi_ml_predictions_persisted" \
+    <<< "${METRICS}"
 
-echo "${METRICS}" \
-    | grep -q \
-        "retour_emploi_predictions_total"
-
-
-echo "${METRICS}" \
-    | grep -q \
-        "retour_emploi_ml_predictions_persisted"
-
-
-echo "${METRICS}" \
-    | grep -q \
-        "retour_emploi_data_drift_ready"
-
+grep -q \
+    "retour_emploi_data_drift_ready" \
+    <<< "${METRICS}"
 
 success "métriques applicatives et ML exposées"
 
 
 # ============================================================
-# 10. PROMETHEUS SCRAPE
+# 10. PROMETHEUS
 # ============================================================
 
-echo
-echo "============================================================"
-echo "10. Test Prometheus"
-echo "============================================================"
+section "10. Test Prometheus"
 
-
-# Attente d'un scrape après la prédiction
+# Laisse à Prometheus le temps d'effectuer un scrape
+# après la prédiction réalisée précédemment.
 sleep 6
-
 
 PROM_RESULT="$(
     curl \
         --noproxy "*" \
         --silent \
         --fail \
+        --max-time 10 \
         --get \
         "${PROMETHEUS_URL}/api/v1/query" \
         --data-urlencode \
-        'query=retour_emploi_model_available'
+        "query=retour_emploi_model_available"
 )"
 
-
-echo "${PROM_RESULT}" \
-    | python -c '
+echo "${PROM_RESULT}" | python -c '
 import json
 import sys
 
 result = json.load(sys.stdin)
 
-assert (
-    result["status"]
-    == "success"
-)
+assert result["status"] == "success"
 
-values = (
-    result[
-        "data"
-    ][
-        "result"
-    ]
-)
+values = result["data"]["result"]
 
 assert len(values) >= 1
 
 value = float(
-    values[0][
-        "value"
-    ][1]
+    values[0]["value"][1]
 )
 
 assert value == 1.0
@@ -628,42 +480,27 @@ print(
 # 11. GRAFANA DATASOURCE
 # ============================================================
 
-echo
-echo "============================================================"
-echo "11. Test datasource Grafana"
-echo "============================================================"
+section "11. Test datasource Grafana"
 
 GRAFANA_DS="$(
     curl \
         --noproxy "*" \
         --silent \
         --fail \
+        --max-time 10 \
         -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
         "${GRAFANA_URL}/api/datasources/uid/prometheus"
 )"
 
-
-echo "${GRAFANA_DS}" \
-    | python -c '
+echo "${GRAFANA_DS}" | python -c '
 import json
 import sys
 
 result = json.load(sys.stdin)
 
-assert (
-    result["uid"]
-    == "prometheus"
-)
-
-assert (
-    result["type"]
-    == "prometheus"
-)
-
-assert (
-    result["url"]
-    == "http://prometheus:9090"
-)
+assert result["uid"] == "prometheus"
+assert result["type"] == "prometheus"
+assert result["url"] == "http://prometheus:9090"
 
 print(
     "OK - datasource Prometheus provisionnée"
@@ -675,42 +512,28 @@ print(
 # 12. GRAFANA DASHBOARD
 # ============================================================
 
-echo
-echo "============================================================"
-echo "12. Test dashboard Grafana"
-echo "============================================================"
+section "12. Test dashboard Grafana"
 
 GRAFANA_DASHBOARD="$(
     curl \
         --noproxy "*" \
         --silent \
         --fail \
+        --max-time 10 \
         -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
         "${GRAFANA_URL}/api/dashboards/uid/retour-emploi-monitoring"
 )"
 
-
-echo "${GRAFANA_DASHBOARD}" \
-    | python -c '
+echo "${GRAFANA_DASHBOARD}" | python -c '
 import json
 import sys
 
 result = json.load(sys.stdin)
 
-dashboard = result[
-    "dashboard"
-]
+dashboard = result["dashboard"]
 
-assert (
-    dashboard["uid"]
-    == "retour-emploi-monitoring"
-)
-
-assert len(
-    dashboard[
-        "panels"
-    ]
-) > 0
+assert dashboard["uid"] == "retour-emploi-monitoring"
+assert len(dashboard["panels"]) > 0
 
 print(
     "OK - dashboard Retour Emploi provisionné"
@@ -722,10 +545,7 @@ print(
 # 13. RETRAIN WORKER
 # ============================================================
 
-echo
-echo "============================================================"
-echo "13. Test retrain-worker"
-echo "============================================================"
+section "13. Test retrain-worker"
 
 RETRAIN_CONTAINER="$(
     docker compose ps \
@@ -733,16 +553,10 @@ RETRAIN_CONTAINER="$(
         retrain-worker
 )"
 
-
-if [ -z "${RETRAIN_CONTAINER}" ]
-then
-
+if [ -z "${RETRAIN_CONTAINER}" ]; then
     echo "ERREUR - retrain-worker introuvable"
-
     exit 1
-
 fi
-
 
 RETRAIN_RUNNING="$(
     docker inspect \
@@ -750,16 +564,10 @@ RETRAIN_RUNNING="$(
         --format '{{.State.Running}}'
 )"
 
-
-if [ "${RETRAIN_RUNNING}" != "true" ]
-then
-
+if [ "${RETRAIN_RUNNING}" != "true" ]; then
     echo "ERREUR - retrain-worker non actif"
-
     exit 1
-
 fi
-
 
 success "retrain-worker actif"
 
@@ -768,10 +576,7 @@ success "retrain-worker actif"
 # 14. SECURITE /RETRAIN
 # ============================================================
 
-echo
-echo "============================================================"
-echo "14. Test protection /retrain"
-echo "============================================================"
+section "14. Test protection /retrain"
 
 HTTP_CODE="$(
     curl \
@@ -779,22 +584,17 @@ HTTP_CODE="$(
         --silent \
         --output /dev/null \
         --write-out "%{http_code}" \
+        --max-time 10 \
         -X POST \
         "${API_URL}/retrain" \
         -H "X-Admin-Token: mauvais-token"
 )"
 
-
-if [ "${HTTP_CODE}" != "403" ]
-then
-
+if [ "${HTTP_CODE}" != "403" ]; then
     echo \
         "ERREUR - /retrain devrait retourner 403, reçu ${HTTP_CODE}"
-
     exit 1
-
 fi
-
 
 success "/retrain protégé par token"
 
@@ -803,12 +603,8 @@ success "/retrain protégé par token"
 # RESULTAT
 # ============================================================
 
-echo
-echo
-echo "============================================================"
-echo "            SMOKE TEST DOCKER : SUCCES"
-echo "============================================================"
-echo
+section "SMOKE TEST DOCKER : SUCCES"
+
 echo "Docker Compose           : OK"
 echo "MLflow                   : OK"
 echo "model-init               : OK"
@@ -824,5 +620,6 @@ echo "Grafana dashboard        : OK"
 echo "Streamlit                : OK"
 echo "retrain-worker           : OK"
 echo "Sécurité /retrain        : OK"
+
 echo
 echo "============================================================"

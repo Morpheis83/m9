@@ -1,50 +1,100 @@
-"""Configuration centrale du projet (Module 9).
+"""Configuration centrale du projet Retour Emploi.
+
+Ce module regroupe les chemins, constantes de reproductibilité
+et listes de variables utilisées dans les différentes étapes
+d'analyse et de modélisation.
 """
+
 from pathlib import Path
 
-# --- Reproductibilite -----------------------------------------
+
+# ============================================================
+# REPRODUCTIBILITE
+# ============================================================
+
 SEED = 42
 
-# --- Chemins ---------------------------------------------------
-ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
-OUTPUTS_DIR = ROOT / "outputs"
-DATA_FILE = DATA_DIR / "dataset_trajectoire_emploi_Sujet Examen CISIA - Promo Upskilling Atlas - mai-oct2026 (Session-00279143).csv"  # placer ici le CSV Kaggle si disponible
 
-# cible du dataset
+# ============================================================
+# CHEMINS
+# ============================================================
+
+ROOT = Path(
+    __file__
+).resolve().parents[1]
+
+DATA_DIR = (
+    ROOT
+    / "data"
+)
+
+OUTPUTS_DIR = (
+    ROOT
+    / "outputs"
+)
+
+DATA_FILE = (
+    DATA_DIR
+    / (
+        "dataset_trajectoire_emploi_Sujet Examen CISIA - "
+        "Promo Upskilling Atlas - mai-oct2026 "
+        "(Session-00279143).csv"
+    )
+)
+
+
+# ============================================================
+# CIBLE
+# ============================================================
+
 TARGET = "classe_retour_emploi"
 
-# Ensemble des features du dataset
+
+# ============================================================
+# VARIABLES DISPONIBLES
+# ============================================================
+
 FEATURES_DISPONIBLES = [
-# df.columns.tolist()
- 'usager_id',
- 'age',
- 'niveau_diplome',
- 'anciennete_poste_ans',
- 'code_rome_vise',
- 'code_insee_commune',
- 'est_allocataire',
- 'nationalite_hors_ue',
- 'synthese_entretien'
+    "usager_id",
+    "age",
+    "niveau_diplome",
+    "anciennete_poste_ans",
+    "code_rome_vise",
+    "code_insee_commune",
+    "est_allocataire",
+    "nationalite_hors_ue",
+    "synthese_entretien",
 ]
 
-# Ensemble des features relatif à un identifiant du dataset
+
+# ============================================================
+# IDENTIFIANTS
+# ============================================================
+
 IDENTIFIANTS = [
- 'usager_id',
+    "usager_id",
 ]
 
-# Ensemble des features qualitatives
+
+# ============================================================
+# VARIABLES QUALITATIVES
+# ============================================================
+
 FEATURES_QUALITATIVES = [
     "niveau_diplome",
     "code_rome_vise",
     "est_allocataire",
     "code_insee_commune",
     "nationalite_hors_ue",
-    "synthese_entretien"
+    "synthese_entretien",
 ]
 
-# Ensemble des features de type numerique
+
+# ============================================================
+# VARIABLES NUMERIQUES
+# ============================================================
+
 NUMERIC = [
- 'age',
-  'anciennete_poste_ans',
+    "age",
+    "anciennete_poste_ans",
 ]

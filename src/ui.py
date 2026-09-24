@@ -1,3 +1,10 @@
+"""Interface Streamlit du service Retour Emploi.
+
+L'interface permet de demander une prédiction à l'API FastAPI,
+d'enregistrer la vérité terrain associée à une prédiction et
+de consulter l'historique des évaluations.
+"""
+
 import os
 
 import pandas as pd
@@ -11,18 +18,34 @@ import streamlit as st
 
 API_URL = os.getenv(
     "API_URL",
-    "http://127.0.0.1:8000"
+    "http://127.0.0.1:8000",
 )
-
-# ============================================================
-# CLASSE PREDICTION INTERPRETATION
-# ============================================================
 
 CLASS_LABELS = {
     0: "Retour rapide — moins de 6 mois",
     1: "Retour moyen — entre 6 et 12 mois",
     2: "Risque de longue durée — au-delà de 12 mois",
 }
+
+
+# ============================================================
+# CONFIGURATION DE LA PAGE
+# ============================================================
+
+# set_page_config doit être exécuté avant les autres commandes Streamlit.
+st.set_page_config(
+    page_title="Retour à l'emploi",
+    page_icon="📊",
+    layout="wide",
+)
+
+st.title(
+    "Aide à l'évaluation du retour à l'emploi"
+)
+
+st.caption(
+    "Prototype pédagogique d'aide à la décision"
+)
 
 st.info(
     """
@@ -36,27 +59,25 @@ st.info(
 
 
 # ============================================================
-# CONFIGURATION DE LA PAGE
+# OUTILS INTERNES
 # ============================================================
 
-st.set_page_config(
-    page_title="Retour à l'emploi",
-    page_icon="📊",
-    layout="wide"
-)
 
+def extraire_detail_erreur(
+    response: requests.Response,
+    exception: Exception,
+) -> str:
+    """Extrait le message d'erreur retourné par l'API."""
 
-# ============================================================
-# TITRE
-# ============================================================
-
-st.title(
-    "Aide à l'évaluation du retour à l'emploi"
-)
-
-st.caption(
-    "Prototype pédagogique d'aide à la décision"
-)
+    try:
+        return str(
+            response.json().get(
+                "detail",
+                str(exception),
+            )
+        )
+    except Exception:
+        return str(exception)
 
 
 # ============================================================
@@ -67,7 +88,7 @@ tab_prediction, tab_feedback, tab_history = st.tabs(
     [
         "Nouvelle évaluation",
         "Résultat réel",
-        "Historique"
+        "Historique",
     ]
 )
 
@@ -77,7 +98,6 @@ tab_prediction, tab_feedback, tab_history = st.tabs(
 # ============================================================
 
 with tab_prediction:
-
     st.subheader(
         "Nouvelle évaluation"
     )
@@ -90,10 +110,9 @@ with tab_prediction:
     with st.form(
         "prediction_form"
     ):
-
         session_id = st.text_input(
             "Identifiant de session",
-            placeholder="Exemple : session-001"
+            placeholder="Exemple : session-001",
         )
 
         niveau_diplome = st.selectbox(
@@ -103,8 +122,8 @@ with tab_prediction:
                 "Bac",
                 "Bac+2",
                 "Bac+5",
-                "Non renseigné"
-            ]
+                "Non renseigné",
+            ],
         )
 
         anciennete_poste_ans = st.number_input(
@@ -112,13 +131,13 @@ with tab_prediction:
             min_value=0.0,
             max_value=60.0,
             value=2.0,
-            step=0.5
+            step=0.5,
         )
 
         code_rome_vise = st.text_input(
             "Code ROME visé",
             value="M1805",
-            max_chars=5
+            max_chars=5,
         )
 
         synthese_entretien = st.text_area(
@@ -127,39 +146,27 @@ with tab_prediction:
             placeholder=(
                 "Exemple : Profil autonome, "
                 "recherche active, aucun frein périphérique identifié."
-            )
+            ),
         )
 
         submit_prediction = st.form_submit_button(
             "Calculer la prédiction"
         )
 
-
     if submit_prediction:
-
         payload = {
-            "session_id":
-                session_id,
-
-            "niveau_diplome":
-                niveau_diplome,
-
-            "anciennete_poste_ans":
-                anciennete_poste_ans,
-
-            "code_rome_vise":
-                code_rome_vise,
-
-            "synthese_entretien":
-                synthese_entretien
+            "session_id": session_id,
+            "niveau_diplome": niveau_diplome,
+            "anciennete_poste_ans": anciennete_poste_ans,
+            "code_rome_vise": code_rome_vise,
+            "synthese_entretien": synthese_entretien,
         }
 
         try:
-
             response = requests.post(
                 f"{API_URL}/predict",
                 json=payload,
-                timeout=10
+                timeout=10,
             )
 
             response.raise_for_status()
@@ -176,22 +183,17 @@ with tab_prediction:
 
             model_version = result.get(
                 "model_version",
-                "inconnue"
+                "inconnue",
             )
 
             probabilities = result.get(
                 "probabilities",
-                {}
+                {},
             )
-
-
-            # ==================================================
-            # RESULTAT
-            # ==================================================
 
             prediction_label = CLASS_LABELS.get(
                 prediction,
-                f"Classe inconnue ({prediction})"
+                f"Classe inconnue ({prediction})",
             )
 
             st.success(
@@ -206,13 +208,7 @@ with tab_prediction:
                 f"Version du modèle : {model_version}"
             )
 
-
-            # ==================================================
-            # PROBABILITES
-            # ==================================================
-
             if probabilities:
-
                 st.subheader(
                     "Probabilités par classe"
                 )
@@ -220,16 +216,14 @@ with tab_prediction:
                 df_probabilities = pd.DataFrame(
                     [
                         {
-                            "Classe":
-                                CLASS_LABELS.get(
-                                    int(classe),
-                                    str(classe)
-                                ),
-
-                            "Probabilité":
-                                float(probabilite)
+                            "Classe": CLASS_LABELS.get(
+                                int(classe),
+                                str(classe),
+                            ),
+                            "Probabilité": float(
+                                probabilite
+                            ),
                         }
-
                         for classe, probabilite
                         in probabilities.items()
                     ]
@@ -248,7 +242,7 @@ with tab_prediction:
                 st.dataframe(
                     df_probabilities,
                     use_container_width=True,
-                    hide_index=True
+                    hide_index=True,
                 )
 
                 st.bar_chart(
@@ -257,27 +251,17 @@ with tab_prediction:
                     )
                 )
 
-
         except requests.exceptions.HTTPError as exc:
-
-            try:
-
-                detail = response.json().get(
-                    "detail",
-                    str(exc)
-                )
-
-            except Exception:
-
-                detail = str(exc)
+            detail = extraire_detail_erreur(
+                response,
+                exc,
+            )
 
             st.error(
                 f"Erreur API : {detail}"
             )
 
-
         except requests.exceptions.RequestException as exc:
-
             st.error(
                 f"Impossible de contacter l'API : {exc}"
             )
@@ -288,7 +272,6 @@ with tab_prediction:
 # ============================================================
 
 with tab_feedback:
-
     st.subheader(
         "Enregistrer le résultat réellement observé"
     )
@@ -307,10 +290,9 @@ with tab_feedback:
     with st.form(
         "feedback_form"
     ):
-
         prediction_id_feedback = st.text_input(
             "Identifiant de prédiction",
-            placeholder="UUID retourné lors de la prédiction"
+            placeholder="UUID retourné lors de la prédiction",
         )
 
         actual_class = st.selectbox(
@@ -318,33 +300,26 @@ with tab_feedback:
             options=[
                 0,
                 1,
-                2
+                2,
             ],
-            format_func=lambda x: CLASS_LABELS[x]
+            format_func=lambda x: CLASS_LABELS[x],
         )
 
         submit_feedback = st.form_submit_button(
             "Enregistrer le résultat réel"
         )
 
-
     if submit_feedback:
-
         payload_feedback = {
-
-            "prediction_id":
-                prediction_id_feedback,
-
-            "actual_class":
-                actual_class
+            "prediction_id": prediction_id_feedback,
+            "actual_class": actual_class,
         }
 
         try:
-
             response = requests.post(
                 f"{API_URL}/feedback",
                 json=payload_feedback,
-                timeout=10
+                timeout=10,
             )
 
             response.raise_for_status()
@@ -353,27 +328,17 @@ with tab_feedback:
                 "Résultat réel enregistré avec succès."
             )
 
-
         except requests.exceptions.HTTPError as exc:
-
-            try:
-
-                detail = response.json().get(
-                    "detail",
-                    str(exc)
-                )
-
-            except Exception:
-
-                detail = str(exc)
+            detail = extraire_detail_erreur(
+                response,
+                exc,
+            )
 
             st.error(
                 f"Erreur API : {detail}"
             )
 
-
         except requests.exceptions.RequestException as exc:
-
             st.error(
                 f"Impossible de contacter l'API : {exc}"
             )
@@ -384,7 +349,6 @@ with tab_feedback:
 # ============================================================
 
 with tab_history:
-
     st.subheader(
         "Historique des prédictions"
     )
@@ -394,42 +358,34 @@ with tab_history:
     )
 
     with col1:
-
         limit = st.number_input(
             "Nombre maximum de lignes",
             min_value=1,
             max_value=1000,
             value=100,
-            step=10
+            step=10,
         )
 
     with col2:
-
         st.write("")
-
 
     if st.button(
         "Actualiser l'historique"
     ):
-
         try:
-
             response = requests.get(
                 f"{API_URL}/history",
                 params={
-                    "limit":
-                        int(limit)
+                    "limit": int(limit),
                 },
-                timeout=10
+                timeout=10,
             )
 
             response.raise_for_status()
 
             history = response.json()
 
-
             if history:
-
                 df_history = pd.DataFrame(
                     history
                 )
@@ -437,14 +393,11 @@ with tab_history:
                 st.dataframe(
                     df_history,
                     use_container_width=True,
-                    hide_index=True
+                    hide_index=True,
                 )
 
-
-                # ==============================================
-                # Quelques indicateurs
-                # ==============================================
-
+                # Les indicateurs de cet écran sont calculés uniquement
+                # sur les lignes d'historique actuellement affichées.
                 st.subheader(
                     "Indicateurs"
                 )
@@ -456,7 +409,6 @@ with tab_history:
                 nb_feedbacks = 0
 
                 if "actual_class" in df_history.columns:
-
                     nb_feedbacks = int(
                         df_history[
                             "actual_class"
@@ -464,7 +416,6 @@ with tab_history:
                         .notna()
                         .sum()
                     )
-
 
                 taux_feedback = (
                     nb_feedbacks
@@ -474,94 +425,70 @@ with tab_history:
                     else 0
                 )
 
-
                 metric1, metric2, metric3 = st.columns(
                     3
                 )
 
                 metric1.metric(
                     "Prédictions",
-                    nb_predictions
+                    nb_predictions,
                 )
 
                 metric2.metric(
                     "Résultats réels",
-                    nb_feedbacks
+                    nb_feedbacks,
                 )
 
                 metric3.metric(
                     "Taux d'enrichissement",
-                    f"{taux_feedback:.1f} %"
+                    f"{taux_feedback:.1f} %",
                 )
 
-
-                # ==============================================
-                # Performance réelle si feedback disponible
-                # ==============================================
-
                 if (
-                    "actual_class"
-                    in df_history.columns
-                    and
-                    "predicted_class"
-                    in df_history.columns
+                    "actual_class" in df_history.columns
+                    and "predicted_class" in df_history.columns
                 ):
-
                     df_evaluable = (
                         df_history
                         .dropna(
                             subset=[
-                                "actual_class"
+                                "actual_class",
                             ]
                         )
                         .copy()
                     )
 
                     if not df_evaluable.empty:
-
                         accuracy = (
                             df_evaluable[
                                 "actual_class"
                             ].astype(int)
-                            ==
-                            df_evaluable[
+                            == df_evaluable[
                                 "predicted_class"
                             ].astype(int)
                         ).mean()
 
                         st.metric(
                             "Accuracy sur données enrichies",
-                            f"{accuracy:.3f}"
+                            f"{accuracy:.3f}",
                         )
 
-
             else:
-
                 st.info(
                     "Aucune prédiction enregistrée."
                 )
 
-
         except requests.exceptions.HTTPError as exc:
-
-            try:
-
-                detail = response.json().get(
-                    "detail",
-                    str(exc)
-                )
-
-            except Exception:
-
-                detail = str(exc)
+            detail = extraire_detail_erreur(
+                response,
+                exc,
+            )
 
             st.error(
                 f"Erreur API : {detail}"
             )
 
-
         except requests.exceptions.RequestException as exc:
-
             st.error(
                 f"Impossible de contacter l'API : {exc}"
             )

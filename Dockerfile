@@ -1,32 +1,26 @@
 # ============================================================
-# Image Python légère
+# IMAGE DE BASE
 # ============================================================
 
 FROM python:3.13-slim
 
 
 # ============================================================
-# Configuration Python
+# CONFIGURATION PYTHON
 # ============================================================
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-
-# ============================================================
-# Répertoire de travail
-# ============================================================
-
 WORKDIR /app
 
 
 # ============================================================
-# Dépendances Python
-#
-# On copie requirements.txt avant le code pour profiter
-# du cache Docker lorsque seules les sources changent.
+# DEPENDANCES
 # ============================================================
 
+# Copier les dépendances avant le code permet de conserver
+# le cache Docker lorsque seules les sources sont modifiées.
 COPY requirements.txt .
 
 RUN pip install \
@@ -35,13 +29,14 @@ RUN pip install \
 
 
 # ============================================================
-# Copie du code source
+# CODE SOURCE
 # ============================================================
 
 COPY src/ ./src/
 
+
 # ============================================================
-# Utilisateur non privilégié
+# UTILISATEUR NON PRIVILEGIE
 # ============================================================
 
 RUN useradd \
@@ -49,35 +44,21 @@ RUN useradd \
     --create-home \
     --shell /bin/bash \
     appuser \
-    && chown -R appuser:appuser /app
-
-
-# ============================================================
-# Répertoire de logs
-# ============================================================
-
-RUN mkdir -p \
-    /app/model \
-    /app/runtime \
+    && mkdir -p \
+        /app/model \
+        /app/runtime \
     && chown -R \
-       10001:10001 \
-       /app
-
-
+        appuser:appuser \
+        /app
 
 USER appuser
 
 
 # ============================================================
-# Port FastAPI
+# SERVICE FASTAPI
 # ============================================================
 
 EXPOSE 8000
-
-
-# ============================================================
-# Healthcheck Docker
-# ============================================================
 
 HEALTHCHECK \
     --interval=30s \
@@ -87,10 +68,5 @@ HEALTHCHECK \
     CMD python -c \
     "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" \
     || exit 1
-
-
-# ============================================================
-# Démarrage de l'API
-# ============================================================
 
 CMD ["python", "-m", "uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8000"]

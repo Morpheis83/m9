@@ -1,51 +1,95 @@
-"""Chargement des données.
+"""Chargement et identification du jeu de données Retour Emploi.
 
-`charger_donnees()` lit le jeu trajectoire emploi depuis `data/dataset_trajectoire_emploi_Sujet Examen CISIA - Promo Upskilling Atlas - mai-oct2026 (Session-00279143).csv`. Placez ce
-fichier avant d'executer le projet (voir `data/README.md`).
-`identification()` réalise une première analyse des données nécessaire à la création du dictionnaire des varaibles.
-
-
+Le module centralise la lecture du fichier CSV utilisé par le projet
+ainsi que la production d'un résumé descriptif des variables.
 """
+
 import pandas as pd
 
-from . import config
-from .config import FEATURES_DISPONIBLES
+from src import config
+from src.config import FEATURES_DISPONIBLES
 
 
-def charger_donnees(verbose: bool = True) -> pd.DataFrame:
-    """Charge le jeu trajectoire emploi depuis data/dataset_trajectoire_emploi_Sujet Examen CISIA - Promo Upskilling Atlas - mai-oct2026 (Session-00279143).csv."""
+# ============================================================
+# CHARGEMENT DES DONNEES
+# ============================================================
+
+
+def charger_donnees(
+    verbose: bool = True,
+) -> pd.DataFrame:
+    """Charge le jeu de données configuré dans ``config.DATA_FILE``.
+
+    Args:
+        verbose: Affiche le chemin du fichier chargé lorsque la valeur
+            est True.
+
+    Returns:
+        Le jeu de données sous forme de DataFrame pandas.
+
+    Raises:
+        FileNotFoundError: Si le fichier configuré n'existe pas.
+    """
+
     if not config.DATA_FILE.exists():
         raise FileNotFoundError(
             f"Fichier introuvable : {config.DATA_FILE}"
         )
-    if verbose:
-        print(f"Chargement du CSV : {config.DATA_FILE}")
-    return pd.read_csv(config.DATA_FILE)
 
-def identification(df: pd.DataFrame) -> dict:
-    """Identification des données : types, cardinalité, min, max."""
+    if verbose:
+        print(
+            f"Chargement du CSV : {config.DATA_FILE}"
+        )
+
+    return pd.read_csv(
+        config.DATA_FILE
+    )
+
+
+# ============================================================
+# IDENTIFICATION DES VARIABLES
+# ============================================================
+
+
+def identification(
+    df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Construit un résumé des variables du jeu de données.
+
+    Pour chaque feature attendue, le résumé contient le type pandas,
+    la cardinalité ainsi que les valeurs minimale et maximale lorsque
+    ces opérations sont applicables au type de données.
+    """
 
     resultats = []
 
     for feature in FEATURES_DISPONIBLES:
-        serie = df[feature]
+        serie = df[
+            feature
+        ]
 
-        # Cardinalité avec nunique()
         cardinalite = serie.nunique()
 
         try:
             valeur_min = serie.min()
             valeur_max = serie.max()
+
         except TypeError:
             valeur_min = "Non applicable"
             valeur_max = "Non applicable"
 
-        resultats.append({
-            "Feature": feature,
-            "Type": str(serie.dtype),
-            "Cardinalité": cardinalite,
-            "Minimum": valeur_min,
-            "Maximum": valeur_max,
-        })
+        resultats.append(
+            {
+                "Feature": feature,
+                "Type": str(
+                    serie.dtype
+                ),
+                "Cardinalité": cardinalite,
+                "Minimum": valeur_min,
+                "Maximum": valeur_max,
+            }
+        )
 
-    return pd.DataFrame(resultats)
+    return pd.DataFrame(
+        resultats
+    )

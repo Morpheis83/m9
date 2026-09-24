@@ -1,22 +1,14 @@
 apiVersion: 1
 
 providers:
-
   - name: "Retour Emploi"
-
     orgId: 1
-
     folder: "Retour Emploi"
-
     type: file
 
     disableDeletion: true
-
     editable: false
-
     updateIntervalSeconds: 10
 
     options:
-
       path: /var/lib/grafana/dashboards
-      

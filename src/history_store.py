@@ -1,11 +1,18 @@
-from pathlib import Path
-from datetime import datetime, timezone
+"""Persistance SQLite des prédictions, feedbacks et jobs de réentraînement.
+
+Ce module centralise l'accès à la base d'historique utilisée par l'API,
+le monitoring et le worker de réentraînement.
+"""
+
 import os
 import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 
+
 # ============================================================
-# Configuration
+# CONFIGURATION
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -19,21 +26,23 @@ DEFAULT_DB_PATH = (
 DB_PATH = Path(
     os.getenv(
         "HISTORY_DB_PATH",
-        str(DEFAULT_DB_PATH)
+        str(DEFAULT_DB_PATH),
     )
 )
 
 DB_PATH.parent.mkdir(
     parents=True,
-    exist_ok=True
+    exist_ok=True,
 )
 
 
 # ============================================================
-# Connexion
+# CONNEXION
 # ============================================================
 
-def get_connection():
+
+def get_connection() -> sqlite3.Connection:
+    """Crée une connexion SQLite retournant les lignes par nom de colonne."""
 
     connection = sqlite3.connect(
         DB_PATH
@@ -45,84 +54,63 @@ def get_connection():
 
 
 # ============================================================
-# Initialisation
+# INITIALISATION
 # ============================================================
 
-def init_db():
+
+def init_db() -> None:
+    """Crée les tables nécessaires si elles n'existent pas."""
 
     with get_connection() as conn:
-
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS predictions (
-
                 prediction_id TEXT PRIMARY KEY,
-
                 created_at TEXT NOT NULL,
-
                 session_id TEXT,
-
                 niveau_diplome TEXT,
-
                 anciennete_poste_ans REAL,
-
                 code_rome_vise TEXT,
-
                 synthese_entretien TEXT,
-
                 predicted_class INTEGER NOT NULL,
-
                 probability_0 REAL,
-
                 probability_1 REAL,
-
                 probability_2 REAL,
-
                 model_version TEXT
             )
-        """)
+            """
+        )
 
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS feedback (
-
                 prediction_id TEXT PRIMARY KEY,
-
                 observed_at TEXT NOT NULL,
-
                 actual_class INTEGER NOT NULL,
 
                 FOREIGN KEY(prediction_id)
                     REFERENCES predictions(prediction_id)
             )
-        """)
-
+            """
+        )
 
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS retrain_jobs (
-
                 job_id TEXT PRIMARY KEY,
-
                 created_at TEXT NOT NULL,
                 started_at TEXT,
                 finished_at TEXT,
-
                 status TEXT NOT NULL,
-
                 feedback_count INTEGER,
-
                 current_version TEXT,
                 candidate_version TEXT,
-
                 promoted INTEGER NOT NULL DEFAULT 0,
-
                 current_f1_macro REAL,
                 candidate_f1_macro REAL,
-
                 current_recall_class_2 REAL,
                 candidate_recall_class_2 REAL,
-
                 candidate_latency_p95_ms REAL,
-
                 message TEXT
             )
             """
@@ -132,8 +120,9 @@ def init_db():
 
 
 # ============================================================
-# Enregistrement d'une prédiction
+# PREDICTIONS
 # ============================================================
+
 
 def enregistrer_prediction(
     prediction_id,
@@ -144,11 +133,11 @@ def enregistrer_prediction(
     synthese_entretien,
     predicted_class,
     probabilities,
-    model_version
-):
+    model_version,
+) -> None:
+    """Persiste une prédiction et les données nécessaires à son suivi."""
 
     with get_connection() as conn:
-
         conn.execute(
             """
             INSERT INTO predictions (
@@ -169,40 +158,37 @@ def enregistrer_prediction(
             """,
             (
                 prediction_id,
-
                 datetime.now(
                     timezone.utc
                 ).isoformat(),
-
                 session_id,
                 niveau_diplome,
                 anciennete_poste_ans,
                 code_rome_vise,
                 synthese_entretien,
                 predicted_class,
-
                 probabilities.get(0),
                 probabilities.get(1),
                 probabilities.get(2),
-
-                model_version
-            )
+                model_version,
+            ),
         )
 
         conn.commit()
 
 
 # ============================================================
-# Feedback / vérité terrain
+# FEEDBACK / VERITE TERRAIN
 # ============================================================
+
 
 def enregistrer_feedback(
     prediction_id,
-    actual_class
-):
+    actual_class,
+) -> None:
+    """Associe ou met à jour la vérité terrain d'une prédiction."""
 
     with get_connection() as conn:
-
         prediction = conn.execute(
             """
             SELECT prediction_id
@@ -211,7 +197,7 @@ def enregistrer_feedback(
             """,
             (
                 prediction_id,
-            )
+            ),
         ).fetchone()
 
         if prediction is None:
@@ -219,6 +205,8 @@ def enregistrer_feedback(
                 "Prediction inconnue"
             )
 
+        # L'UPSERT permet de corriger ultérieurement une vérité terrain
+        # déjà renseignée sans créer plusieurs feedbacks.
         conn.execute(
             """
             INSERT INTO feedback (
@@ -235,57 +223,49 @@ def enregistrer_feedback(
             """,
             (
                 prediction_id,
-
                 datetime.now(
                     timezone.utc
                 ).isoformat(),
-
-                actual_class
-            )
+                actual_class,
+            ),
         )
 
         conn.commit()
 
 
 # ============================================================
-# Historique enrichi
+# HISTORIQUE METIER
 # ============================================================
 
+
 def historique(
-    limit=100
-):
+    limit: int = 100,
+) -> list[dict]:
+    """Retourne les dernières prédictions enrichies de leur feedback."""
 
     with get_connection() as conn:
-
         rows = conn.execute(
             """
             SELECT
-
                 p.prediction_id,
                 p.created_at,
                 p.session_id,
-
                 p.niveau_diplome,
                 p.anciennete_poste_ans,
                 p.code_rome_vise,
                 p.synthese_entretien,
-
                 p.predicted_class,
-
                 p.probability_0,
                 p.probability_1,
                 p.probability_2,
-
                 p.model_version,
-
                 f.actual_class,
                 f.observed_at
 
             FROM predictions p
 
             LEFT JOIN feedback f
-                ON p.prediction_id =
-                   f.prediction_id
+                ON p.prediction_id = f.prediction_id
 
             ORDER BY p.created_at DESC
 
@@ -293,7 +273,7 @@ def historique(
             """,
             (
                 limit,
-            )
+            ),
         ).fetchall()
 
     return [
@@ -301,18 +281,18 @@ def historique(
         for row in rows
     ]
 
+
+# ============================================================
+# DONNEES DE MONITORING
+# ============================================================
+
+
 def donnees_monitoring(
-    limit: int = 5000
-):
+    limit: int = 5000,
+) -> list[dict]:
+    """Retourne les données nécessaires aux métriques ML et de drift."""
 
-    with sqlite3.connect(
-        DB_PATH
-    ) as conn:
-
-        conn.row_factory = (
-            sqlite3.Row
-        )
-
+    with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT
@@ -338,7 +318,7 @@ def donnees_monitoring(
             """,
             (
                 limit,
-            )
+            ),
         ).fetchall()
 
     return [
@@ -346,7 +326,14 @@ def donnees_monitoring(
         for row in rows
     ]
 
-def creer_retrain_job():
+
+# ============================================================
+# JOBS DE REENTRAINEMENT
+# ============================================================
+
+
+def creer_retrain_job() -> str:
+    """Crée un job de réentraînement dans l'état pending."""
 
     job_id = str(
         uuid4()
@@ -356,10 +343,7 @@ def creer_retrain_job():
         timezone.utc
     ).isoformat()
 
-    with sqlite3.connect(
-        DB_PATH
-    ) as conn:
-
+    with get_connection() as conn:
         conn.execute(
             """
             INSERT INTO retrain_jobs (
@@ -372,23 +356,19 @@ def creer_retrain_job():
             (
                 job_id,
                 created_at,
-                "pending"
-            )
+                "pending",
+            ),
         )
 
     return job_id
 
 
 def recuperer_retrain_job(
-    job_id: str
-):
+    job_id: str,
+) -> dict | None:
+    """Retourne un job de réentraînement à partir de son identifiant."""
 
-    with sqlite3.connect(
-        DB_PATH
-    ) as conn:
-
-        conn.row_factory = sqlite3.Row
-
+    with get_connection() as conn:
         row = conn.execute(
             """
             SELECT *
@@ -397,26 +377,21 @@ def recuperer_retrain_job(
             """,
             (
                 job_id,
-            )
+            ),
         ).fetchone()
 
     if row is None:
-
         return None
 
-    return dict(
-        row
-    )
+    return dict(row)
 
 
-def prendre_prochain_retrain_job():
+def prendre_prochain_retrain_job() -> dict | None:
+    """Réserve atomiquement le plus ancien job en attente."""
 
-    with sqlite3.connect(
-        DB_PATH
-    ) as conn:
-
-        conn.row_factory = sqlite3.Row
-
+    with get_connection() as conn:
+        # BEGIN IMMEDIATE empêche deux workers de réserver
+        # simultanément le même job SQLite.
         conn.execute(
             "BEGIN IMMEDIATE"
         )
@@ -432,9 +407,7 @@ def prendre_prochain_retrain_job():
         ).fetchone()
 
         if row is None:
-
             conn.commit()
-
             return None
 
         started_at = datetime.now(
@@ -451,15 +424,13 @@ def prendre_prochain_retrain_job():
             """,
             (
                 started_at,
-                row["job_id"]
-            )
+                row["job_id"],
+            ),
         )
 
         conn.commit()
 
-        return dict(
-            row
-        )
+        return dict(row)
 
 
 def terminer_retrain_job(
@@ -474,17 +445,15 @@ def terminer_retrain_job(
     current_recall_class_2: float | None = None,
     candidate_recall_class_2: float | None = None,
     candidate_latency_p95_ms: float | None = None,
-    message: str | None = None
-):
+    message: str | None = None,
+) -> None:
+    """Enregistre le résultat final d'un job de réentraînement."""
 
     finished_at = datetime.now(
         timezone.utc
     ).isoformat()
 
-    with sqlite3.connect(
-        DB_PATH
-    ) as conn:
-
+    with get_connection() as conn:
         conn.execute(
             """
             UPDATE retrain_jobs
@@ -518,17 +487,20 @@ def terminer_retrain_job(
                 candidate_recall_class_2,
                 candidate_latency_p95_ms,
                 message,
-                job_id
-            )
+                job_id,
+            ),
         )
-def donnees_reentrainement():
 
-    with sqlite3.connect(
-        DB_PATH
-    ) as conn:
 
-        conn.row_factory = sqlite3.Row
+# ============================================================
+# DONNEES DE REENTRAINEMENT
+# ============================================================
 
+
+def donnees_reentrainement() -> list[dict]:
+    """Retourne les prédictions disposant d'une vérité terrain."""
+
+    with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT
