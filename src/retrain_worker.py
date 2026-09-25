@@ -362,6 +362,7 @@ def traiter_job(job: dict) -> None:
                 "numpy.dtype",
                 "src.prepa_data.convertir_en_str",
                 "src.prepa_data.preparer_texte",
+                "src.prepa_data.nettoyer_texte_ethique",
             ],
             code_paths=[
                 str(BASE_DIR / "src"),
