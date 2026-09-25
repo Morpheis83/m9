@@ -378,14 +378,13 @@ preprocessor_s2 = make_preprocessor(
         "anciennete_poste_ans",
     ],
     text_feature="synthese_entretien",
+    text_pipe_custom=text_pipe_ethique,
 )
 
 
 preprocessor_s3 = make_preprocessor(
     text_feature="synthese_entretien",
-    text_pipe_custom=text_pipe_ethique,
 )
-
 
 preprocessor_s4 = make_preprocessor(
     age_feature="age",
