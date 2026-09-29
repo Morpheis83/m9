@@ -98,3 +98,15 @@ NUMERIC = [
     "age",
     "anciennete_poste_ans",
 ]
+
+# ============================================================
+# REGLES DE COHERENCE METIER - AGE
+# ============================================================
+
+AGE_MIN_DEBUT_ACTIVITE = 16
+
+AGE_MIN_PAR_DIPLOME = {
+    "Bac": 16,
+    "Bac+2": 18,
+    "Bac+5": 20,
+}

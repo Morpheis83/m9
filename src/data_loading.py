@@ -47,6 +47,57 @@ def charger_donnees(
 
 
 # ============================================================
+# CONTROLES DE COHERENCE METIER
+# ============================================================
+
+
+def masque_incoherences_age(
+    df: pd.DataFrame,
+) -> pd.Series:
+    """Identifie les observations présentant une incohérence liée à l'âge."""
+
+    incoherence_anciennete = (
+        df["age"].notna()
+        & df["anciennete_poste_ans"].notna()
+        & (
+            df["age"]
+            - df["anciennete_poste_ans"]
+            < config.AGE_MIN_DEBUT_ACTIVITE
+        )
+    )
+
+    age_min_diplome = (
+        df["niveau_diplome"]
+        .map(config.AGE_MIN_PAR_DIPLOME)
+    )
+
+    incoherence_diplome = (
+        df["age"].notna()
+        & age_min_diplome.notna()
+        & (
+            df["age"]
+            < age_min_diplome
+        )
+    )
+
+    return (
+        incoherence_anciennete
+        | incoherence_diplome
+    )
+
+
+def exclure_incoherences_age(
+    df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Exclut les observations présentant une incohérence liée à l'âge."""
+
+    masque = masque_incoherences_age(df)
+
+    return df.loc[
+        ~masque
+    ].copy()
+
+# ============================================================
 # IDENTIFICATION DES VARIABLES
 # ============================================================
 
