@@ -284,10 +284,10 @@ def traiter_job(job: dict) -> None:
     # ========================================================
 
     # Une faible tolérance à la dégradation est autorisée sur une
-    # métrique uniquement si l'autre apporte une amélioration.
+    # f1 score uniquement 
     non_degradation = (
         candidate_f1 >= current_f1 - 0.005
-        and candidate_recall_2 >= current_recall_2 - 0.01
+        and candidate_recall_2 >= current_recall_2
     )
 
     improvement = (
